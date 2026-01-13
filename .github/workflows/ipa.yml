@@ -12,8 +12,8 @@ on:
           - turrit
           - telegram
       decrypted_ipa_url:
-        description: 'Optional: Direct URL of decrypted IPA (leave empty for auto-fetch from latest release)'
-        required: false
+        description: 'Direct URL of the decrypted IPA'
+        required: true
         type: string
       inject_sideload_fix:
         description: 'Inject SideloadFix.dylib'
@@ -61,50 +61,11 @@ jobs:
       - name: Download decrypted IPA
         env:
           IPA_URL: ${{ inputs.decrypted_ipa_url }}
-          VARIANT: ${{ inputs.telegram_variant }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "$IPA_URL" ]; then
-            echo "Using provided IPA URL: $IPA_URL"
-            curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$IPA_URL"
-          else
-            echo "Auto-fetching latest IPA for $VARIANT..."
-            case "$VARIANT" in
-              swiftgram)
-                # Try to get latest Swiftgram IPA from releases
-                # Note: You may need to adjust this based on actual release structure
-                gh release download --repo Swiftgram/Swiftgram --pattern "*.ipa" --dir . || {
-                  echo "Error: Could not auto-fetch Swiftgram IPA. Please provide decrypted_ipa_url."
-                  exit 1
-                }
-                mv *.ipa decrypted.ipa
-                ;;
-              turrit)
-                # Try to get latest Turrit IPA from releases
-                gh release download --repo Turrit-Telegram/Turrit --pattern "*.ipa" --dir . || {
-                  echo "Error: Could not auto-fetch Turrit IPA. Please provide decrypted_ipa_url."
-                  exit 1
-                }
-                mv *.ipa decrypted.ipa
-                ;;
-              telegram)
-                # Try to get latest Telegram IPA from releases
-                gh release download --repo TelegramMessenger/Telegram-iOS --pattern "*.ipa" --dir . || {
-                  echo "Error: Could not auto-fetch Telegram IPA. Please provide decrypted_ipa_url."
-                  exit 1
-                }
-                mv *.ipa decrypted.ipa
-                ;;
-            esac
-          fi
-          
-          # Verify IPA was downloaded
-          if [ ! -f decrypted.ipa ]; then
-            echo "Error: Failed to download IPA"
-            exit 1
-          fi
-          
+          echo "Downloading IPA from: $IPA_URL"
+          curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$IPA_URL"
           unzip -q decrypted.ipa
+
 
       - name: Extract Name, Bundle ID, and Version
         id: extractIPA

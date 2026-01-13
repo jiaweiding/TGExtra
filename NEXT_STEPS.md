@@ -82,10 +82,15 @@ git push origin main
 4. 点击 **"Run workflow"** 按钮
 5. 填写选项:
    - **telegram_variant**: 选择 `swiftgram`、`turrit` 或 `telegram`
-   - **decrypted_ipa_url**: (可选) 提供解密 IPA 的直接 URL,或留空自动获取
-   - **inject_sideload_fix**: 勾选以注入 SideloadFix.dylib
-   - **inject_nse_fix**: 勾选以注入 NSEFix.dylib
+   - **decrypted_ipa_url**: **必需** - 提供解密 IPA 的直接下载 URL
+   - **inject_sideload_fix**: 勾选以注入 SideloadFix.dylib (默认: 是)
+   - **inject_nse_fix**: 勾选以注入 NSEFix.dylib (默认: 是)
 6. 点击 **"Run workflow"** 开始构建
+
+> **重要**: 你必须提供解密 IPA 的直接下载 URL。可以从以下来源获取:
+> - 自己解密的 IPA 文件 (上传到文件托管服务)
+> - 可信的第三方 IPA 下载站点
+> - 其他已知的解密 IPA 来源
 
 ### 5. 下载构建的 IPA
 
@@ -99,14 +104,20 @@ git push origin main
 
 ### 关于 IPA 来源
 
-工作流会尝试从以下 GitHub 仓库自动获取 IPA:
-- **Swiftgram**: `Swiftgram/Swiftgram`
-- **Turrit**: `Turrit-Telegram/Turrit`
-- **Telegram**: `TelegramMessenger/Telegram-iOS`
+工作流需要你提供解密 IPA 的直接下载 URL。
 
-**注意**: 这些官方仓库可能不包含解密的 IPA 文件。如果自动获取失败,你需要:
-1. 从可信来源获取解密的 IPA
-2. 在运行工作流时提供直接下载 URL
+**获取解密 IPA 的方法:**
+
+1. **自己解密** - 使用工具如 CrackerXI+, Clutch 等解密 App Store 下载的应用
+2. **第三方 IPA 站点** - 从可信的 IPA 下载站点获取 (如 decrypt.day, iosgods.com 等)
+3. **社区分享** - 从 Telegram 群组或其他社区获取
+
+**支持的变体:**
+- **Swiftgram** - Bundle ID: `app.swiftgram.ios`
+- **Turrit** - Bundle ID: `com.seastar.turrit`  
+- **Telegram** - Bundle ID: `ph.telegra.Telegraph`
+
+> **注意**: 确保 IPA 文件是**解密的**,否则注入会失败。
 
 ### 关于 dylib 文件
 
@@ -131,14 +142,21 @@ git push origin main
 
 ### 问题: "TGExtra.dylib not found in lib directory"
 
-**解决方案**: 你必须先添加 `TGExtra.dylib` 到 `/lib` 目录。
+**解决方案**: 你必须先添加 `TGExtra.dylib` 或 `TGExtra*.deb` 到 `/lib` 目录。
 
-### 问题: 自动获取 IPA 失败
+### 问题: 找不到解密的 IPA
 
-**解决方案**: 手动提供解密 IPA 的 URL:
-1. 从可信来源获取解密的 IPA
-2. 上传到文件托管服务或使用直接下载链接
-3. 在运行工作流时粘贴 URL
+**解决方案**: 
+1. 从可信来源获取解密的 IPA 文件
+2. 上传到文件托管服务 (如 GitHub Release, Dropbox, Google Drive 等)
+3. 获取直接下载链接
+4. 在运行工作流时粘贴该 URL
+
+**推荐的 IPA 来源:**
+- decrypt.day
+- iosgods.com  
+- 相关 Telegram 群组
+- 自己使用解密工具解密
 
 ### 问题: 构建的 IPA 无法安装
 
