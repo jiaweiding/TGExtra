@@ -1,20 +1,67 @@
 # TGExtra
-A simple Telegram iOS Tweak.
 
-To Open Tweak menu : Longpress screen with 3 finger (if no flex injected) of 4 fingers.
+A Telegram iOS Tweak with support for multiple Telegram variants (Swiftgram, Turrit, and official Telegram).
+
+## Features
+
+- **Ghost Mode** - Browse without leaving traces
+- **No Read Receipt** - For messages and Stories
+- **Disable Ads** - Clean interface
+- **Allow Saving Protected Content** - Save media from protected channels
+- **Multi-Variant Support** - Works with Swiftgram, Turrit, and official Telegram
+
+To open the Tweak menu: Long press the screen with 3 fingers (or 4 fingers if Flex is injected).
+
+## Building IPAs
+
+This repository includes GitHub Actions workflows to automatically build and inject TGExtra into Telegram variants.
+
+### Prerequisites
+
+1. Add your `TGExtra.dylib` file to the `/lib` directory
+2. (Optional) Add `SideloadFix.dylib` and `NSEFix.dylib` to `/lib` (will auto-download if not present)
+3. (Optional for Swiftgram) Add `SwiftgramPro.dylib` to `/lib` to unlock Pro features
+
+### Running the Workflow
+
+1. Go to **Actions** tab in GitHub
+2. Select **"Build and Release IPA"** workflow
+3. Click **"Run workflow"**
+4. Choose options:
+   - **Telegram variant**: Select `swiftgram`, `turrit`, or `telegram`
+   - **Decrypted IPA URL**: (Optional) Provide a direct URL to a decrypted IPA, or leave empty to auto-fetch
+   - **Inject SideloadFix**: Enable/disable SideloadFix.dylib injection
+   - **Inject NSEFix**: Enable/disable NSEFix.dylib injection
+5. Wait for the workflow to complete
+6. Download the patched IPA from the **Releases** page
+
+### Supported Variants
+
+| Variant | Bundle ID | Notes |
+|---------|-----------|-------|
+| **Swiftgram** | `app.swiftgram.ios` | Supports SwiftgramPro.dylib injection |
+| **Turrit** | `com.seastar.turrit` | Standard injection |
+| **Telegram** | `ph.telegra.Telegraph` | Official client |
+
+### File Structure
+
+```
+TGExtra/
+├── lib/
+│   ├── TGExtra.dylib          # Required: Main tweak
+│   ├── SideloadFix.dylib      # Optional: Auto-downloads if missing
+│   ├── NSEFix.dylib           # Optional: Auto-downloads if missing
+│   └── SwiftgramPro.dylib     # Optional: For Swiftgram variant only
+├── TGExtra.bundle/            # Resources bundle
+└── .github/workflows/
+    ├── ipa.yml                # IPA build workflow
+    └── build.yml              # Tweak build workflow (legacy)
+```
 
 ## Screenshots
 
 ![Screenshot 1](Screenshots/1.png)
 ![Screenshot 2](Screenshots/2.png)
-
-## Features
-
-- Disable Ads
-- Ghost Mode
-- No Read Receipt for messages and Stories
-- Allow saving Protected Content ( Due to frequenet Telegram Api updates this feature is only limited for client compiled with 11.8.1 sources)
-
 
 ## Disclaimer
 

@@ -3,10 +3,28 @@ name: Build and Release IPA
 on:
   workflow_dispatch:
     inputs:
-      decrypted_ipa_url:
-        description: "Direct URL of the decrypted IPA"
+      telegram_variant:
+        description: 'Telegram variant to build'
         required: true
+        type: choice
+        options:
+          - swiftgram
+          - turrit
+          - telegram
+      decrypted_ipa_url:
+        description: 'Optional: Direct URL of decrypted IPA (leave empty for auto-fetch from latest release)'
+        required: false
         type: string
+      inject_sideload_fix:
+        description: 'Inject SideloadFix.dylib'
+        required: false
+        type: boolean
+        default: true
+      inject_nse_fix:
+        description: 'Inject NSEFix.dylib'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   prepareDependencies:
@@ -16,16 +34,76 @@ jobs:
       ipa_app_name: ${{ steps.extractIPA.outputs.ipa_app_name }}
       ipa_bundle_id: ${{ steps.extractIPA.outputs.ipa_bundle_id }}
       ipa_version: ${{ steps.extractIPA.outputs.ipa_version }}
-      tgextra_version: ${{ steps.extractTGExtra.outputs.tgextra_version }}
+      variant_name: ${{ steps.setVariant.outputs.variant_name }}
+      ipa_source: ${{ steps.setVariant.outputs.ipa_source }}
     steps:
-      - name: Fetch TGExtra.bundle
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set variant information
+        id: setVariant
+        run: |
+          case "${{ inputs.telegram_variant }}" in
+            swiftgram)
+              echo "variant_name=Swiftgram" >> "$GITHUB_OUTPUT"
+              echo "ipa_source=https://github.com/Swiftgram/Swiftgram" >> "$GITHUB_OUTPUT"
+              ;;
+            turrit)
+              echo "variant_name=Turrit" >> "$GITHUB_OUTPUT"
+              echo "ipa_source=https://github.com/Turrit-Telegram/Turrit" >> "$GITHUB_OUTPUT"
+              ;;
+            telegram)
+              echo "variant_name=Telegram" >> "$GITHUB_OUTPUT"
+              echo "ipa_source=https://github.com/TelegramMessenger/Telegram-iOS" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Download decrypted IPA
         env:
           IPA_URL: ${{ inputs.decrypted_ipa_url }}
+          VARIANT: ${{ inputs.telegram_variant }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$IPA_URL"
+          if [ -n "$IPA_URL" ]; then
+            echo "Using provided IPA URL: $IPA_URL"
+            curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$IPA_URL"
+          else
+            echo "Auto-fetching latest IPA for $VARIANT..."
+            case "$VARIANT" in
+              swiftgram)
+                # Try to get latest Swiftgram IPA from releases
+                # Note: You may need to adjust this based on actual release structure
+                gh release download --repo Swiftgram/Swiftgram --pattern "*.ipa" --dir . || {
+                  echo "Error: Could not auto-fetch Swiftgram IPA. Please provide decrypted_ipa_url."
+                  exit 1
+                }
+                mv *.ipa decrypted.ipa
+                ;;
+              turrit)
+                # Try to get latest Turrit IPA from releases
+                gh release download --repo Turrit-Telegram/Turrit --pattern "*.ipa" --dir . || {
+                  echo "Error: Could not auto-fetch Turrit IPA. Please provide decrypted_ipa_url."
+                  exit 1
+                }
+                mv *.ipa decrypted.ipa
+                ;;
+              telegram)
+                # Try to get latest Telegram IPA from releases
+                gh release download --repo TelegramMessenger/Telegram-iOS --pattern "*.ipa" --dir . || {
+                  echo "Error: Could not auto-fetch Telegram IPA. Please provide decrypted_ipa_url."
+                  exit 1
+                }
+                mv *.ipa decrypted.ipa
+                ;;
+            esac
+          fi
+          
+          # Verify IPA was downloaded
+          if [ ! -f decrypted.ipa ]; then
+            echo "Error: Failed to download IPA"
+            exit 1
+          fi
+          
           unzip -q decrypted.ipa
 
       - name: Extract Name, Bundle ID, and Version
@@ -41,26 +119,89 @@ jobs:
           echo "ipa_bundle_id=$IPA_BUNDLE_ID" >> "$GITHUB_OUTPUT"
           echo "ipa_version=$IPA_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Download latest TGExtra
+      - name: Download or use local SideloadFix.dylib
+        if: ${{ inputs.inject_sideload_fix }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download release --repo TheWinner02/TGExtra --pattern 'com.choco.tg_*_iphoneos-arm.deb' --dir .
+          if [ -f lib/SideloadFix.dylib ]; then
+            echo "Using local SideloadFix.dylib from lib directory"
+            cp lib/SideloadFix.dylib .
+          else
+            echo "Downloading SideloadFix.dylib from GitHub"
+            gh release download release --repo TheWinner02/SideloadFix --pattern 'SideloadFix.dylib' --dir .
+          fi
 
-      - name: Extract TGExtra version
-        id: extractTGExtra
-        run: |
-          FIRST=$(ls com.choco.tg_*_iphoneos-arm.deb | head -n1)
-          TGEXTRA_VERSION=$(echo "$FIRST" | sed -E 's/com\.choco\.tg_([0-9\.]+)_.+\.deb/\1/')
-
-          echo "tgextra_version=$TGEXTRA_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Download latest Sideload & NSE Fix.dylib
+      - name: Download or use local NSEFix.dylib
+        if: ${{ inputs.inject_nse_fix }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download release --repo TheWinner02/SideloadFix --pattern 'SideloadFix.dylib' --dir .
-          gh release download release --repo TheWinner02/NSEFix --pattern 'NSEFix.dylib' --dir .
+          if [ -f lib/NSEFix.dylib ]; then
+            echo "Using local NSEFix.dylib from lib directory"
+            cp lib/NSEFix.dylib .
+          else
+            echo "Downloading NSEFix.dylib from GitHub"
+            gh release download release --repo TheWinner02/NSEFix --pattern 'NSEFix.dylib' --dir .
+          fi
+
+      - name: Extract TGExtra.dylib from .deb or use existing .dylib
+        run: |
+          # Check if .dylib exists directly
+          if [ -f lib/TGExtra.dylib ]; then
+            echo "Using TGExtra.dylib from lib directory"
+          # Check if .deb file exists
+          elif ls lib/TGExtra*.deb 1> /dev/null 2>&1; then
+            echo "Found TGExtra .deb file, extracting dylib..."
+            TGEXTRA_DEB=$(ls lib/TGExtra*.deb | head -n1)
+            mkdir -p deb-extract-tgextra
+            ar x "$TGEXTRA_DEB"
+            tar -xf data.tar.* -C deb-extract-tgextra
+            
+            # Find the dylib in the extracted files
+            DYLIB_PATH=$(find deb-extract-tgextra -name "*.dylib" | head -n 1)
+            if [ -z "$DYLIB_PATH" ]; then
+              echo "Error: No .dylib found in $TGEXTRA_DEB"
+              exit 1
+            fi
+            
+            cp "$DYLIB_PATH" lib/TGExtra.dylib
+            echo "Extracted TGExtra.dylib from $TGEXTRA_DEB"
+            rm -rf deb-extract-tgextra *.tar.* control.tar.* debian-binary
+          else
+            echo "Error: Neither TGExtra.dylib nor TGExtra*.deb found in lib directory!"
+            echo "Please add TGExtra.dylib or TGExtra.deb to the lib directory and commit it."
+            exit 1
+          fi
+
+      - name: Extract SwiftgramPro.dylib if building Swiftgram
+        if: ${{ inputs.telegram_variant == 'swiftgram' }}
+        run: |
+          # Check if .dylib exists directly
+          if [ -f lib/SwiftgramPro.dylib ]; then
+            echo "Using SwiftgramPro.dylib from lib directory"
+          # Check if .deb file exists
+          elif ls lib/SwiftgramPro*.deb 1> /dev/null 2>&1; then
+            echo "Found SwiftgramPro .deb file, extracting dylib..."
+            SWIFTGRAMPRO_DEB=$(ls lib/SwiftgramPro*.deb | head -n1)
+            mkdir -p deb-extract-swiftgrampro
+            ar x "$SWIFTGRAMPRO_DEB"
+            tar -xf data.tar.* -C deb-extract-swiftgrampro
+            
+            # Find the dylib in the extracted files
+            DYLIB_PATH=$(find deb-extract-swiftgrampro -name "*.dylib" | head -n 1)
+            if [ -z "$DYLIB_PATH" ]; then
+              echo "Warning: No .dylib found in $SWIFTGRAMPRO_DEB"
+              echo "Swiftgram will be built without Pro features"
+            else
+              cp "$DYLIB_PATH" lib/SwiftgramPro.dylib
+              echo "Extracted SwiftgramPro.dylib from $SWIFTGRAMPRO_DEB"
+            fi
+            rm -rf deb-extract-swiftgrampro *.tar.* control.tar.* debian-binary
+          else
+            echo "Warning: Neither SwiftgramPro.dylib nor SwiftgramPro*.deb found in lib directory"
+            echo "Swiftgram will be built without Pro features"
+          fi
 
       - name: Upload Dependencies
         uses: actions/upload-artifact@v4
@@ -69,18 +210,22 @@ jobs:
           path: |
             decrypted.ipa
             TGExtra.bundle
+            lib/TGExtra.dylib
             SideloadFix.dylib
             NSEFix.dylib
-            com.choco.tg_*_iphoneos-arm.deb
+            SwiftgramPro.dylib
 
   inject:
-    name: Inject TGExtra + Sideload & NSE Fix
+    name: Inject Dylibs
     needs: prepareDependencies
     runs-on: macos-14
     env:
       IPA_BUNDLE_ID: ${{ needs.prepareDependencies.outputs.ipa_bundle_id }}
       IPA_VERSION: ${{ needs.prepareDependencies.outputs.ipa_version }}
-      TGEXTRA_VERSION: ${{ needs.prepareDependencies.outputs.tgextra_version }}
+      VARIANT_NAME: ${{ needs.prepareDependencies.outputs.variant_name }}
+      INJECT_SIDELOAD_FIX: ${{ inputs.inject_sideload_fix }}
+      INJECT_NSE_FIX: ${{ inputs.inject_nse_fix }}
+      TELEGRAM_VARIANT: ${{ inputs.telegram_variant }}
     steps:
       - name: Download dependencies
         uses: actions/download-artifact@v4
@@ -97,28 +242,22 @@ jobs:
 
       - name: Install ldid
         run: |
-           brew install ldid
+          brew install ldid
 
-      - name: Inject TGExtra + SideloadFix + NSEFix into IPA
+      - name: Inject dylibs into IPA
         run: |
           set -e
 
           DECRYPTED_IPA="dependencies/decrypted.ipa"
           TGEXTRA_BUNDLE="dependencies/TGExtra.bundle"
-          TGEXTRA_DEB="dependencies/com.choco.tg_${TGEXTRA_VERSION}_iphoneos-arm.deb"
+          TGEXTRA_DYLIB="dependencies/lib/TGExtra.dylib"
 
-          OUT_BASE="$IPA_BUNDLE_ID-$IPA_VERSION-TGExtra-$TGEXTRA_VERSION"
+          OUT_BASE="$IPA_BUNDLE_ID-$IPA_VERSION-TGExtra"
           OUT_IPA="$OUT_BASE.ipa"
           OUT_TIPA="$OUT_BASE.tipa"
           TMP_DIR="tmp-ipa"
-          DYLIB_NAME="libTGExtra.dylib"
 
-          mkdir -p deb-extract artifacts
-          ar x "$TGEXTRA_DEB"
-          tar -xf data.tar.* -C deb-extract
-          
-          find deb-extract -name "*.dylib"
-
+          mkdir -p artifacts
 
           unzip "$DECRYPTED_IPA" -d "$TMP_DIR"
           APP_PATH=$(find "$TMP_DIR/Payload" -type d -name "*.app" | head -n 1)
@@ -128,30 +267,52 @@ jobs:
 
           mkdir -p "$APP_PATH/Frameworks"
           
-          DYLIB_PATH=$(find deb-extract -name "*.dylib" | head -n 1)
-          cp "$DYLIB_PATH" "$APP_PATH/Frameworks/$DYLIB_NAME"
+          # Inject TGExtra.dylib
+          echo "Injecting TGExtra.dylib..."
+          cp "$TGEXTRA_DYLIB" "$APP_PATH/Frameworks/TGExtra.dylib"
+          insert_dylib --all-yes @executable_path/Frameworks/TGExtra.dylib "$BIN_PATH"
+          mv "$BIN_PATH"_patched "$BIN_PATH"
           
-          cp "dependencies/SideloadFix.dylib" "$APP_PATH/Frameworks/SideloadFix.dylib"
-          cp "dependencies/NSEFix.dylib" "$APP_PATH/Frameworks/NSEFix.dylib"
+          # Inject SideloadFix.dylib if enabled
+          if [ "$INJECT_SIDELOAD_FIX" = "true" ] && [ -f "dependencies/SideloadFix.dylib" ]; then
+            echo "Injecting SideloadFix.dylib..."
+            cp "dependencies/SideloadFix.dylib" "$APP_PATH/Frameworks/SideloadFix.dylib"
+            insert_dylib --all-yes @executable_path/Frameworks/SideloadFix.dylib "$BIN_PATH"
+            mv "$BIN_PATH"_patched "$BIN_PATH"
+          fi
+          
+          # Inject NSEFix.dylib if enabled
+          if [ "$INJECT_NSE_FIX" = "true" ] && [ -f "dependencies/NSEFix.dylib" ]; then
+            echo "Injecting NSEFix.dylib..."
+            cp "dependencies/NSEFix.dylib" "$APP_PATH/Frameworks/NSEFix.dylib"
+            insert_dylib --all-yes @executable_path/Frameworks/NSEFix.dylib "$BIN_PATH"
+            mv "$BIN_PATH"_patched "$BIN_PATH"
+          fi
+          
+          # Inject SwiftgramPro.dylib for Swiftgram variant
+          if [ "$TELEGRAM_VARIANT" = "swiftgram" ] && [ -f "dependencies/SwiftgramPro.dylib" ]; then
+            echo "Injecting SwiftgramPro.dylib for Swiftgram variant..."
+            cp "dependencies/SwiftgramPro.dylib" "$APP_PATH/Frameworks/SwiftgramPro.dylib"
+            insert_dylib --all-yes @executable_path/Frameworks/SwiftgramPro.dylib "$BIN_PATH"
+            mv "$BIN_PATH"_patched "$BIN_PATH"
+          fi
 
-          insert_dylib --all-yes @executable_path/Frameworks/$DYLIB_NAME "$BIN_PATH"
-          mv "$BIN_PATH"_patched "$BIN_PATH"
-          insert_dylib --all-yes @executable_path/Frameworks/SideloadFix.dylib "$BIN_PATH"
-          mv "$BIN_PATH"_patched "$BIN_PATH"
-          insert_dylib --all-yes @executable_path/Frameworks/NSEFix.dylib "$BIN_PATH"
-          mv "$BIN_PATH"_patched "$BIN_PATH"
-
+          # Copy TGExtra.bundle
           cp -R "$TGEXTRA_BUNDLE" "$APP_PATH/"
 
+          # Sign the binary
           ldid -S "$BIN_PATH"
 
-          otool -L "$BIN_PATH" | grep -E "($DYLIB_NAME|SideloadFix.dylib|NSEFix.dylib)"
+          # Verify injections
+          echo "Verifying dylib injections:"
+          otool -L "$BIN_PATH" | grep -E "(TGExtra.dylib|SideloadFix.dylib|NSEFix.dylib|SwiftgramPro.dylib)" || echo "No dylibs found in binary"
 
+          # Package IPA
           (cd "$TMP_DIR" && zip -qr "../$OUT_IPA" .)
           cp "$OUT_IPA" "artifacts/$OUT_IPA"
           cp "$OUT_IPA" "artifacts/$OUT_TIPA"
           
-          rm -rf deb-extract "$TMP_DIR"
+          rm -rf "$TMP_DIR"
 
       - name: Upload injected IPA
         uses: actions/upload-artifact@v4
@@ -168,15 +329,7 @@ jobs:
     env:
       IPA_BUNDLE_ID: ${{ needs.prepareDependencies.outputs.ipa_bundle_id }}
       IPA_VERSION: ${{ needs.prepareDependencies.outputs.ipa_version }}
-      TGEXTRA_VERSION: ${{ needs.prepareDependencies.outputs.tgextra_version }}
     steps:
-      - name: Download dependencies
-        uses: actions/download-artifact@v4
-        with:
-          path: dependencies
-          name: dependencies
-          merge-multiple: true
-
       - name: Download injected IPA
         uses: actions/download-artifact@v4
         with:
@@ -205,15 +358,14 @@ jobs:
 
       - name: Patch injected IPA
         run: |
-          OUT_BASE="$IPA_BUNDLE_ID-$IPA_VERSION-TGExtra-$TGEXTRA_VERSION"
-          SIDELOADFIX_DYLIB="dependencies/SideloadFix.dylib"
+          OUT_BASE="$IPA_BUNDLE_ID-$IPA_VERSION-TGExtra"
           INJECTED_IPA="artifacts/$OUT_BASE.ipa"
           INJECTED_TIPA="artifacts/$OUT_BASE.tipa"
 
           ipapatch --input "$INJECTED_IPA" --inplace --noconfirm
           ipapatch --input "$INJECTED_TIPA" --inplace --noconfirm
 
-      - name: Upload injected IPA
+      - name: Upload patched IPA
         uses: actions/upload-artifact@v4
         with:
           name: patched-artifacts
@@ -227,8 +379,9 @@ jobs:
     runs-on: macos-14
     env:
       IPA_APP_NAME: ${{ needs.prepareDependencies.outputs.ipa_app_name }}
+      VARIANT_NAME: ${{ needs.prepareDependencies.outputs.variant_name }}
     steps:
-      - name: Download injected IPA
+      - name: Download patched IPA
         uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -239,13 +392,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view release --repo ${{ github.repository }} --json body --jq .body > release_body.md
+          gh release view release --repo ${{ github.repository }} --json body --jq .body > release_body.md || echo "" > release_body.md
 
       - name: Generate Checksums
         id: metadata
         run: |
           if [ -f release_body.md ]; then
-            awk -v sideload="### $IPA_APP_NAME (Sideload)" -v troll="### $IPA_APP_NAME (TrollStore)" '
+            awk -v sideload="### $VARIANT_NAME (Sideload)" -v troll="### $VARIANT_NAME (TrollStore)" '
               BEGIN { skip=0 }
               {
                 if ($0 == sideload || $0 == troll) { skip=1 }
@@ -257,7 +410,7 @@ jobs:
 
           for ipa in artifacts/*.ipa; do
             if [ -f "$ipa" ]; then
-              echo "### $IPA_APP_NAME (Sideload)" >> release_body.md
+              echo "### $VARIANT_NAME (Sideload)" >> release_body.md
               echo "* MD5: $(md5 -q $ipa)" >> release_body.md
               echo "* SHA1: $(shasum -a 1 $ipa | awk '{ print $1 }')" >> release_body.md
               echo "* SHA256: $(shasum -a 256 $ipa | awk '{ print $1 }')" >> release_body.md
@@ -268,7 +421,7 @@ jobs:
 
           for tipa in artifacts/*.tipa; do
             if [ -f "$tipa" ]; then
-              echo "### $IPA_APP_NAME (TrollStore)" >> release_body.md
+              echo "### $VARIANT_NAME (TrollStore)" >> release_body.md
               echo "* MD5: $(md5 -q $tipa)" >> release_body.md
               echo "* SHA1: $(shasum -a 1 $tipa | awk '{ print $1 }')" >> release_body.md
               echo "* SHA256: $(shasum -a 256 $tipa | awk '{ print $1 }')" >> release_body.md
@@ -291,6 +444,7 @@ jobs:
           draft: false
           prerelease: false
           make_latest: true
+
   cleanup:
     name: Cleanup
     needs: updateRelease
@@ -300,8 +454,7 @@ jobs:
         uses: geekyeggo/delete-artifact@v5
         with:
           name: |
-            artifacts
             dependencies
+            injected-artifacts
+            patched-artifacts
           failOnError: false
-
-

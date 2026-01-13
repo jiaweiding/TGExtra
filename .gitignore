@@ -6,3 +6,13 @@ xcuserdata/
 
 .theos
 /packages
+
+# Build artifacts
+*.deb
+artifacts/
+tmp-ipa/
+deb-extract/
+
+# Track dylib and deb files in lib directory
+!lib/*.dylib
+!lib/*.deb
