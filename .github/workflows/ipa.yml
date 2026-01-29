@@ -117,14 +117,18 @@ jobs:
           VERSION="${{ inputs.tgextra_version }}"
           echo "Looking for TGExtra version: $VERSION"
           
-          # Check for dylib matching version
-          DYLIB_FILE=$(ls lib/TGExtra*"$VERSION"*.dylib 2>/dev/null | head -n1)
-          DEB_FILE=$(ls lib/TGExtra*"$VERSION"*.deb 2>/dev/null | head -n1)
+          # Check for dylib or deb matching version precisely
+          # Uses regex to ensure the version is not followed by a digit or a dot+digit
+          FILES=$(ls lib/ 2>/dev/null)
+          DYLIB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.dylib$" | grep -E "(^|[^0-9])$VERSION([^0-9]|\.[^0-9]|$)" | head -n1)
+          DEB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.deb$" | grep -E "(^|[^0-9])$VERSION([^0-9]|\.[^0-9]|$)" | head -n1)
           
-          if [ -n "$DYLIB_FILE" ]; then
+          if [ -n "$DYLIB_NAME" ]; then
+            DYLIB_FILE="lib/$DYLIB_NAME"
             echo "Found matching TGExtra dylib: $DYLIB_FILE"
             cp "$DYLIB_FILE" lib/TGExtra.dylib
-          elif [ -n "$DEB_FILE" ]; then
+          elif [ -n "$DEB_NAME" ]; then
+            DEB_FILE="lib/$DEB_NAME"
             echo "Found matching TGExtra deb: $DEB_FILE, extracting..."
             mkdir -p deb-extract-tgextra
             if command -v brew >/dev/null; then brew install zstd; fi
