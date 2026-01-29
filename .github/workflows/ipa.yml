@@ -371,5 +371,4 @@ jobs:
           name: |
             dependencies
             injected-artifacts
-            patched-artifacts
           failOnError: false
