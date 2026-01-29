@@ -118,10 +118,20 @@ jobs:
           echo "Looking for TGExtra version: $VERSION"
           
           # Check for dylib or deb matching version precisely
-          # Uses regex to ensure the version is not followed by a digit or a dot+digit
+          # 1. Escape dots in version (1.2 -> 1\.2)
+          ESCAPED_VERSION=$(echo "$VERSION" | sed 's/\./\\./g')
+          
+          # 2. Search logic:
+          # - Match version preceded by non-digit or start
+          # - Match version followed by non-digit or end
+          # - EXCLUDE matches where version is followed by a dot and then a digit (prevents 1.2 matching 1.2.1)
           FILES=$(ls lib/ 2>/dev/null)
-          DYLIB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.dylib$" | grep -E "(^|[^0-9])$VERSION([^0-9]|\.[^0-9]|$)" | head -n1)
-          DEB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.deb$" | grep -E "(^|[^0-9])$VERSION([^0-9]|\.[^0-9]|$)" | head -n1)
+          
+          FIND_VERSION_RE="(^|[^0-9])$ESCAPED_VERSION([^0-9]|$)"
+          EXCLUDE_SUBVERSION_RE="$ESCAPED_VERSION\.[0-9]"
+          
+          DYLIB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.dylib$" | grep -E "$FIND_VERSION_RE" | grep -v -E "$EXCLUDE_SUBVERSION_RE" | head -n1)
+          DEB_NAME=$(echo "$FILES" | grep -i "TGExtra" | grep "\.deb$" | grep -E "$FIND_VERSION_RE" | grep -v -E "$EXCLUDE_SUBVERSION_RE" | head -n1)
           
           if [ -n "$DYLIB_NAME" ]; then
             DYLIB_FILE="lib/$DYLIB_NAME"
