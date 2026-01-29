@@ -25,6 +25,10 @@ on:
         required: false
         type: boolean
         default: true
+      tgextra_version:
+        description: 'Version of TGExtra to use (e.g., 1.7.1)'
+        required: true
+        type: string
 
 jobs:
   prepareDependencies:
@@ -62,8 +66,10 @@ jobs:
         env:
           IPA_URL: ${{ inputs.decrypted_ipa_url }}
         run: |
-          echo "Downloading IPA from: $IPA_URL"
-          curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$IPA_URL"
+          # Normalize Dropbox URLs: change dl=0 to dl=1
+          NORMALIZED_URL=$(echo "$IPA_URL" | sed 's/dl=0/dl=1/g')
+          echo "Downloading IPA from: $NORMALIZED_URL"
+          curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" -o decrypted.ipa "$NORMALIZED_URL"
           unzip -q decrypted.ipa
 
 
@@ -108,30 +114,39 @@ jobs:
 
       - name: Extract TGExtra.dylib from .deb or use existing .dylib
         run: |
-          # Check if .dylib exists directly
-          if [ -f lib/TGExtra.dylib ]; then
-            echo "Using TGExtra.dylib from lib directory"
-          # Check if .deb file exists
-          elif ls lib/TGExtra*.deb 1> /dev/null 2>&1; then
-            echo "Found TGExtra .deb file, extracting dylib..."
-            TGEXTRA_DEB=$(ls lib/TGExtra*.deb | head -n1)
+          VERSION="${{ inputs.tgextra_version }}"
+          echo "Looking for TGExtra version: $VERSION"
+          
+          # Check for dylib matching version
+          DYLIB_FILE=$(ls lib/TGExtra*"$VERSION"*.dylib 2>/dev/null | head -n1)
+          DEB_FILE=$(ls lib/TGExtra*"$VERSION"*.deb 2>/dev/null | head -n1)
+          
+          if [ -n "$DYLIB_FILE" ]; then
+            echo "Found matching TGExtra dylib: $DYLIB_FILE"
+            cp "$DYLIB_FILE" lib/TGExtra.dylib
+          elif [ -n "$DEB_FILE" ]; then
+            echo "Found matching TGExtra deb: $DEB_FILE, extracting..."
             mkdir -p deb-extract-tgextra
-            ar x "$TGEXTRA_DEB"
-            tar -xf data.tar.* -C deb-extract-tgextra
+            if command -v brew >/dev/null; then brew install zstd; fi
             
-            # Find the dylib in the extracted files
-            DYLIB_PATH=$(find deb-extract-tgextra -name "*.dylib" | head -n 1)
-            if [ -z "$DYLIB_PATH" ]; then
-              echo "Error: No .dylib found in $TGEXTRA_DEB"
-              exit 1
+            ar x "$DEB_FILE"
+            if [ -f data.tar.zst ]; then
+              zstd -d data.tar.zst
+              tar -xf data.tar -C deb-extract-tgextra
+            else
+              tar -xf data.tar.* -C deb-extract-tgextra
             fi
             
-            cp "$DYLIB_PATH" lib/TGExtra.dylib
-            echo "Extracted TGExtra.dylib from $TGEXTRA_DEB"
-            rm -rf deb-extract-tgextra *.tar.* control.tar.* debian-binary
+            EXTRACTED_DYLIB=$(find deb-extract-tgextra -name "*.dylib" | head -n 1)
+            if [ -z "$EXTRACTED_DYLIB" ]; then
+              echo "Error: No .dylib found in $DEB_FILE"
+              exit 1
+            fi
+            cp "$EXTRACTED_DYLIB" lib/TGExtra.dylib
+            rm -rf deb-extract-tgextra *.tar* debian-binary
           else
-            echo "Error: Neither TGExtra.dylib nor TGExtra*.deb found in lib directory!"
-            echo "Please add TGExtra.dylib or TGExtra.deb to the lib directory and commit it."
+            echo "Error: No TGExtra dylib or deb found matching version $VERSION in lib/ directory."
+            ls lib/
             exit 1
           fi
 
@@ -146,19 +161,28 @@ jobs:
             echo "Found SwiftgramPro .deb file, extracting dylib..."
             SWIFTGRAMPRO_DEB=$(ls lib/SwiftgramPro*.deb | head -n1)
             mkdir -p deb-extract-swiftgrampro
+            
+            # Extract data.tar.*
             ar x "$SWIFTGRAMPRO_DEB"
-            tar -xf data.tar.* -C deb-extract-swiftgrampro
+            if [ -f data.tar.zst ]; then
+              if ! command -v zstd >/dev/null; then if command -v brew >/dev/null; then brew install zstd; fi; fi
+              zstd -d data.tar.zst
+              tar -xf data.tar -C deb-extract-swiftgrampro
+            else
+              tar -xf data.tar.* -C deb-extract-swiftgrampro
+            fi
             
             # Find the dylib in the extracted files
             DYLIB_PATH=$(find deb-extract-swiftgrampro -name "*.dylib" | head -n 1)
             if [ -z "$DYLIB_PATH" ]; then
-              echo "Warning: No .dylib found in $SWIFTGRAMPRO_DEB"
+              echo "Warning: No .dylib found in $SWIFTGRAMPRO_DEB. Files found:"
+              find deb-extract-swiftgrampro -maxdepth 4
               echo "Swiftgram will be built without Pro features"
             else
               cp "$DYLIB_PATH" lib/SwiftgramPro.dylib
               echo "Extracted SwiftgramPro.dylib from $SWIFTGRAMPRO_DEB"
             fi
-            rm -rf deb-extract-swiftgrampro *.tar.* control.tar.* debian-binary
+            rm -rf deb-extract-swiftgrampro *.tar* debian-binary
           else
             echo "Warning: Neither SwiftgramPro.dylib nor SwiftgramPro*.deb found in lib directory"
             echo "Swiftgram will be built without Pro features"
@@ -334,81 +358,11 @@ jobs:
             artifacts/*.ipa
             artifacts/*.tipa
 
-  updateRelease:
-    name: Update GitHub Release
-    needs: [prepareDependencies, inject, patch]
-    runs-on: macos-14
-    env:
-      IPA_APP_NAME: ${{ needs.prepareDependencies.outputs.ipa_app_name }}
-      VARIANT_NAME: ${{ needs.prepareDependencies.outputs.variant_name }}
-    steps:
-      - name: Download patched IPA
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          name: patched-artifacts
-          merge-multiple: true
 
-      - name: Fetch existing release body
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view release --repo ${{ github.repository }} --json body --jq .body > release_body.md || echo "" > release_body.md
-
-      - name: Generate Checksums
-        id: metadata
-        run: |
-          if [ -f release_body.md ]; then
-            awk -v sideload="### $VARIANT_NAME (Sideload)" -v troll="### $VARIANT_NAME (TrollStore)" '
-              BEGIN { skip=0 }
-              {
-                if ($0 == sideload || $0 == troll) { skip=1 }
-                if (skip && /^### / && $0 != sideload && $0 != troll) { skip=0 }
-                if (!skip) print $0
-              }
-            ' release_body.md > release_body.tmp && mv release_body.tmp release_body.md
-          fi
-
-          for ipa in artifacts/*.ipa; do
-            if [ -f "$ipa" ]; then
-              echo "### $VARIANT_NAME (Sideload)" >> release_body.md
-              echo "* MD5: $(md5 -q $ipa)" >> release_body.md
-              echo "* SHA1: $(shasum -a 1 $ipa | awk '{ print $1 }')" >> release_body.md
-              echo "* SHA256: $(shasum -a 256 $ipa | awk '{ print $1 }')" >> release_body.md
-              echo "" >> release_body.md
-              break
-            fi
-          done
-
-          for tipa in artifacts/*.tipa; do
-            if [ -f "$tipa" ]; then
-              echo "### $VARIANT_NAME (TrollStore)" >> release_body.md
-              echo "* MD5: $(md5 -q $tipa)" >> release_body.md
-              echo "* SHA1: $(shasum -a 1 $tipa | awk '{ print $1 }')" >> release_body.md
-              echo "* SHA256: $(shasum -a 256 $tipa | awk '{ print $1 }')" >> release_body.md
-              echo "" >> release_body.md
-              break
-            fi
-          done
-
-      - name: Update GitHub Release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: release
-          name: ${{ github.event.repository.name }}
-          body_path: release_body.md
-          files: |
-            artifacts/*.ipa
-            artifacts/*.tipa
-          draft: false
-          prerelease: false
-          make_latest: true
 
   cleanup:
     name: Cleanup
-    needs: updateRelease
+    needs: [patch]
     runs-on: macos-14
     steps:
       - name: Delete build artifacts
