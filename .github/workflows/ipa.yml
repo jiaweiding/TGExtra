@@ -230,9 +230,9 @@ jobs:
             decrypted.ipa
             TGExtra.bundle
             lib/TGExtra.dylib
+            lib/SwiftgramPro.dylib
             SideloadFix.dylib
             NSEFix.dylib
-            SwiftgramPro.dylib
 
   inject:
     name: Inject Dylibs
@@ -309,9 +309,9 @@ jobs:
           fi
           
           # Inject SwiftgramPro.dylib for Swiftgram variant
-          if [ "$TELEGRAM_VARIANT" = "swiftgram" ] && [ -f "dependencies/SwiftgramPro.dylib" ]; then
+          if [ "$TELEGRAM_VARIANT" = "swiftgram" ] && [ -f "dependencies/lib/SwiftgramPro.dylib" ]; then
             echo "Injecting SwiftgramPro.dylib for Swiftgram variant..."
-            cp "dependencies/SwiftgramPro.dylib" "$APP_PATH/Frameworks/SwiftgramPro.dylib"
+            cp "dependencies/lib/SwiftgramPro.dylib" "$APP_PATH/Frameworks/SwiftgramPro.dylib"
             insert_dylib --all-yes @executable_path/Frameworks/SwiftgramPro.dylib "$BIN_PATH"
             mv "$BIN_PATH"_patched "$BIN_PATH"
           fi
