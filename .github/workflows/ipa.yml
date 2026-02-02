@@ -198,12 +198,21 @@ jobs:
             fi
             
             # Find the dylib in the extracted files
+            # Try to find .dylib file first (e.g., SwiftgramCrack.dylib)
             DYLIB_PATH=$(find deb-extract-swiftgrampro -name "*.dylib" | head -n 1)
+            
+            # If no .dylib found, try to find Framework executable
             if [ -z "$DYLIB_PATH" ]; then
-              echo "Warning: No .dylib found in $SWIFTGRAMPRO_DEB. Files found:"
-              find deb-extract-swiftgrampro -maxdepth 4
+              DYLIB_PATH=$(find deb-extract-swiftgrampro -type f -path "*/SwiftgramPro.framework/SwiftgramPro" | head -n 1)
+            fi
+            
+            if [ -z "$DYLIB_PATH" ]; then
+              echo "Warning: No .dylib or Framework executable found in $SWIFTGRAMPRO_DEB"
+              echo "Files found in deb:"
+              find deb-extract-swiftgrampro -type f | head -20
               echo "Swiftgram will be built without Pro features"
             else
+              echo "Found SwiftgramPro dylib/framework at: $DYLIB_PATH"
               cp "$DYLIB_PATH" lib/SwiftgramPro.dylib
               echo "Extracted SwiftgramPro.dylib from $SWIFTGRAMPRO_DEB"
             fi
