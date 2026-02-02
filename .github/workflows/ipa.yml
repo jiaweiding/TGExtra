@@ -151,11 +151,22 @@ jobs:
               tar -xf data.tar.* -C deb-extract-tgextra
             fi
             
+            # Try to find .dylib file first
             EXTRACTED_DYLIB=$(find deb-extract-tgextra -name "*.dylib" | head -n 1)
+            
+            # If no .dylib found, try to find Framework executable
             if [ -z "$EXTRACTED_DYLIB" ]; then
-              echo "Error: No .dylib found in $DEB_FILE"
+              EXTRACTED_DYLIB=$(find deb-extract-tgextra -type f -path "*/TGExtra.framework/TGExtra" | head -n 1)
+            fi
+            
+            if [ -z "$EXTRACTED_DYLIB" ]; then
+              echo "Error: No .dylib or Framework executable found in $DEB_FILE"
+              echo "Contents of extracted deb:"
+              find deb-extract-tgextra -type f | head -20
               exit 1
             fi
+            
+            echo "Found dylib/framework at: $EXTRACTED_DYLIB"
             cp "$EXTRACTED_DYLIB" lib/TGExtra.dylib
             rm -rf deb-extract-tgextra *.tar* debian-binary
           else
